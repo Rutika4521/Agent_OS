@@ -1,0 +1,60 @@
+# Agent-OS Configuration
+# These are configurable defaults. Applications may override per-process.
+
+system:
+  max_processes: 100
+  default_scheduler: priority    # priority | weighted_fair
+
+process_defaults:
+  priority: 5
+  weight: 1
+  resources:
+    token_limit: 5000
+    llm_call_limit: 50
+    tool_call_limit: 20
+    step_limit: 100
+    wall_time_limit: 300       # seconds
+    child_process_limit: 10
+  restart_policy: N_TIMES       # NEVER | ONCE | N_TIMES | EXPONENTIAL_BACKOFF
+  resource_exceeded_policy: FAIL # BLOCK | FAIL | TERMINATE
+  orphan_policy: TERMINATE       # TERMINATE | REASSIGN
+
+scheduler:
+  aging:
+    enabled: true
+    interval_seconds: 5
+    max_bonus: 10
+  time_slice_steps: 1            # steps per scheduling round
+
+ipc:
+  queue_capacity: 100
+  overflow_policy: BLOCK         # BLOCK | REJECT | DROP
+
+memory:
+  max_loaded_pages: 100
+  eviction_policy: LRU
+  page_size: 4096                # bytes (logical)
+
+supervisor:
+  max_restarts: 3
+  failure_window_seconds: 60
+  backoff_initial: 1.0           # seconds
+  backoff_multiplier: 2.0
+  backoff_max: 60.0              # seconds
+
+security:
+  default_capabilities: []
+
+sandbox:
+  enabled: true
+  timeout_seconds: 30
+
+llm:
+  default_provider: mock
+
+persistence:
+  database_url: "sqlite+aiosqlite:///agent_os.db"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
