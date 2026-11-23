@@ -1,84 +1,111 @@
 """
-Showcase Run-Server
-===================
+Showcase Run-Server — 100% Feature Utilisation
+===============================================
 
-Starts the Agent-OS FastAPI server with the **Autonomous Incident Response**
-showcase pipeline wired in as the demo handler.
-
-When the user clicks ▶ Run Demo in the React dashboard, this server runs the
-showcase agents (not the default examples/demo pipeline) so the UI sees all
-7 showcase processes, their IPC messages, resource usage, and events in real time.
+Starts the Agent-OS FastAPI server with the full 12-agent
+Autonomous Incident Response showcase pipeline wired in as the demo handler.
 
 Usage
 -----
-    # Terminal 1 — start the server
-    cd C:\\Users\\RUTIKA\\Desktop\\LY\\EDAI\\showcase
+    # Terminal 1
     python run_server.py
 
-    # Terminal 2 — start the React UI
-    cd "C:\\Users\\RUTIKA\\Desktop\\LY\\EDAI\\Agent OS\\agent-os\\frontend"
-    npm run dev
+    # Terminal 2
+    cd "../Agent OS/agent-os/frontend" && npm run dev
 
-    # Browser
-    http://localhost:3000  →  click ▶ Run Demo
+    # Browser → http://localhost:3000 → ▶ Run Demo
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# ── 1. Add showcase root so 'agents' package is importable ────────────────────
+# ── Add showcase root so 'agents' package is importable ──────────────────────
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-# ── 2. If NOT installed via pip, add the local agent-os sources to path ──────
-#    (comment out these two lines if you've done `pip install agent-os-kernel`)
+# ── Fall back to local agent-os source if not pip-installed ──────────────────
 _AGENT_OS = _HERE.parent / "Agent OS" / "agent-os"
 if _AGENT_OS.exists():
-    _SRC = _AGENT_OS / "src"
-    for p in (str(_SRC), str(_AGENT_OS)):
-        if p not in sys.path:
-            sys.path.insert(0, p)
+    for _p in (str(_AGENT_OS / "src"), str(_AGENT_OS)):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
 
-# ── 3. Core agent-os imports ──────────────────────────────────────────────────
+# ── Core imports ──────────────────────────────────────────────────────────────
 import asyncio
 
 from agent_os.kernel.state_machine import ProcessState, StepStatus, WaitReason
+from agent_os.resources.quota import ResourceLimits
 from agent_os.supervisor.failure import FailureType
+from agent_os.metrics.events import EventType
 from agent_os.api.routes import _ks, set_demo_runner
 from agent_os import AgentContext
 
-# ── 4. Showcase agent imports ─────────────────────────────────────────────────
-from agents.incident_commander import IncidentCommanderAgent
-from agents.security_auditor   import SecurityAuditorAgent
-from agents.bug_fixer          import BugFixerAgent
-from agents.flaky_test_runner  import FlakyTestRunnerAgent
-from agents.contended_workers  import ContendedWorkerA, ContendedWorkerB
-from agents.telemetry          import TelemetryAgent
+# ── Showcase agents ───────────────────────────────────────────────────────────
+from agents.incident_commander      import IncidentCommanderAgent
+from agents.security_auditor        import SecurityAuditorAgent
+from agents.bug_fixer               import BugFixerAgent
+from agents.flaky_test_runner       import FlakyTestRunnerAgent
+from agents.contended_workers       import ContendedWorkerA, ContendedWorkerB
+from agents.telemetry               import TelemetryAgent
+from agents.resource_limited_agent  import BudgetBusterAgent, TOKEN_LIMIT
+from agents.once_restart_agent      import OnceRestartAgent
+from agents.never_restart_agent     import CriticalFailAgent
+from agents.exponential_backoff_agent import ExponentialBackoffAgent
+from agents.long_running_agent      import LongRunningAgent
+from agents.checkpoint_agent        import CheckpointAgent
 
 
-# ── 5. Showcase demo pipeline (injected into routes) ─────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Resource limit enforcement (kernel-level, same as main.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _enforce_limits(proc, pm, events) -> bool:
+    pid = proc.process_id
+    if proc.resource_limits.token_limit and \
+       proc.resource_usage.total_tokens >= proc.resource_limits.token_limit:
+        await events.emit(EventType.RESOURCE_LIMIT, process_id=pid, metadata={
+            "limit_type": "token_limit",
+            "limit": proc.resource_limits.token_limit,
+            "used":  proc.resource_usage.total_tokens,
+        })
+        await pm.set_state(pid, ProcessState.FAILED)
+        await pm.set_state(pid, ProcessState.TERMINATED)
+        return True
+    if proc.resource_limits.step_limit and \
+       proc.resource_usage.steps >= proc.resource_limits.step_limit:
+        await events.emit(EventType.RESOURCE_LIMIT, process_id=pid, metadata={
+            "limit_type": "step_limit",
+            "limit": proc.resource_limits.step_limit,
+            "used":  proc.resource_usage.steps,
+        })
+        await pm.set_state(pid, ProcessState.COMPLETED)
+        await pm.terminate(pid)
+        return True
+    return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Showcase demo pipeline — injected into routes._run_demo_pipeline
+# ─────────────────────────────────────────────────────────────────────────────
 
 async def _showcase_demo_pipeline() -> None:
-    """
-    Runs the Autonomous Incident Response showcase agents inside the live
-    Agent-OS kernel that the FastAPI server booted.
-
-    The kernel state (_ks) is already populated by app.py's lifespan.
-    We just spawn our agents into it and run the tick loop.
-    UI polling (/processes, /events, /metrics) will see everything live.
-    """
     _ks.demo_status = "running"
-    print("[Showcase] Starting Autonomous Incident Response pipeline…")
+    print("[Showcase] ▶ Starting 100% Feature Utilisation pipeline…")
     try:
         pm  = _ks.process_manager
         ipc = _ks.ipc_manager
         sup = _ks.supervisor
+        em  = _ks.event_manager
+
+        # Need a checkpoint manager — create one wired to the same event manager
+        from agent_os.memory.checkpoint import CheckpointManager
+        ckpt_mgr = CheckpointManager(em)
 
         pid_map: dict[str, int] = {}
 
-        # ── Instantiate agents ────────────────────────────────────────────────
+        # ── Instantiate all 12 agents ─────────────────────────────────────────
         commander  = IncidentCommanderAgent(ipc, pid_map)
         auditor    = SecurityAuditorAgent(ipc, pid_map)
         fixer      = BugFixerAgent(ipc, pid_map)
@@ -86,33 +113,82 @@ async def _showcase_demo_pipeline() -> None:
         worker_a   = ContendedWorkerA()
         worker_b   = ContendedWorkerB()
         telemetry  = TelemetryAgent(pm)
+        budget     = BudgetBusterAgent()
+        once_agent = OnceRestartAgent()
+        crit_agent = CriticalFailAgent()
+        exp_agent  = ExponentialBackoffAgent()
+        long_agent = LongRunningAgent()
+        ckpt_agent = CheckpointAgent(ckpt_mgr)
 
-        # ── Spawn into live OS process table ──────────────────────────────────
-        p_cmd = await pm.spawn(commander,  name="IncidentCommander",  priority=10)
-        p_aud = await pm.spawn(auditor,    name="SecurityAuditor",    priority=8)
-        p_fix = await pm.spawn(fixer,      name="BugFixer",           priority=7)
-        p_flk = await pm.spawn(flaky,      name="FlakyTestRunner",    priority=5, restart_policy="N_TIMES")
-        p_wa  = await pm.spawn(worker_a,   name="ContendedWorkerA",   priority=6)
-        p_wb  = await pm.spawn(worker_b,   name="ContendedWorkerB",   priority=6)
-        p_tel = await pm.spawn(telemetry,  name="TelemetryAgent",     priority=2)
+        # ── Spawn ─────────────────────────────────────────────────────────────
+        p_cmd  = await pm.spawn(commander,  name="IncidentCommander",  priority=10)
+        p_aud  = await pm.spawn(auditor,    name="SecurityAuditor",    priority=8)
+        p_fix  = await pm.spawn(fixer,      name="BugFixer",           priority=7)
+        p_bud  = await pm.spawn(budget,     name="BudgetBuster",       priority=9,
+                                resource_limits=ResourceLimits(token_limit=TOKEN_LIMIT))
+        p_crit = await pm.spawn(crit_agent, name="CriticalFail",       priority=8,
+                                restart_policy="NEVER")
+        p_wa   = await pm.spawn(worker_a,   name="ContendedWorkerA",   priority=6)
+        p_wb   = await pm.spawn(worker_b,   name="ContendedWorkerB",   priority=6)
+        p_once = await pm.spawn(once_agent, name="OnceRestart",        priority=6,
+                                restart_policy="ONCE")
+        p_ckpt = await pm.spawn(ckpt_agent, name="CheckpointAgent",    priority=6,
+                                restart_policy="N_TIMES")
+        p_flk  = await pm.spawn(flaky,      name="FlakyTestRunner",    priority=5,
+                                restart_policy="N_TIMES")
+        p_long = await pm.spawn(long_agent, name="LongRunningAgent",   priority=5)
+        p_exp  = await pm.spawn(exp_agent,  name="ExponentialBackoff", priority=4,
+                                restart_policy="EXPONENTIAL_BACKOFF")
+        p_tel  = await pm.spawn(telemetry,  name="TelemetryAgent",     priority=2)
 
-        # Fill IPC address book after PIDs are allocated
         pid_map["auditor"]   = p_aud.process_id
         pid_map["fixer"]     = p_fix.process_id
         pid_map["telemetry"] = p_tel.process_id
 
-        print(
-            f"[Showcase] Spawned 7 agents — PIDs "
-            f"Commander={p_cmd.process_id}, Auditor={p_aud.process_id}, "
-            f"Fixer={p_fix.process_id}, Flaky={p_flk.process_id}, "
-            f"WorkerA={p_wa.process_id}, WorkerB={p_wb.process_id}, "
-            f"Telemetry={p_tel.process_id}"
-        )
+        print(f"[Showcase] 13 agents spawned — PIDs {p_cmd.process_id}…{p_tel.process_id}")
 
-        # ── Tick loop ─────────────────────────────────────────────────────────
-        max_ticks = 400
-        ticks = 0
+        # ── Tick loop with orchestrated pause / resume / cancel ───────────────
+        max_ticks  = 500
+        ticks      = 0
+        p_long_pid = p_long.process_id
+        _paused    = False
+        _resumed   = False
+        _cancelled = False
+
         while ticks < max_ticks:
+            # Orchestrated lifecycle operations
+            if ticks == 10 and not _paused:
+                try:
+                    proc = await pm.get(p_long_pid)
+                    if proc.state == ProcessState.RUNNING:
+                        await pm.pause(p_long_pid)
+                        print(f"[Showcase] ► PAUSED  LongRunningAgent (PID={p_long_pid}) at tick {ticks}")
+                        _paused = True
+                except Exception:
+                    _paused = True
+
+            if ticks == 20 and _paused and not _resumed:
+                try:
+                    proc = await pm.get(p_long_pid)
+                    if proc.state == ProcessState.WAITING:
+                        await pm.resume(p_long_pid)
+                        print(f"[Showcase] ► RESUMED LongRunningAgent (PID={p_long_pid}) at tick {ticks}")
+                        _resumed = True
+                except Exception:
+                    _resumed = True
+
+            if ticks == 30 and _resumed and not _cancelled:
+                try:
+                    proc = await pm.get(p_long_pid)
+                    if proc.state not in (ProcessState.TERMINATED, ProcessState.CANCELLED,
+                                         ProcessState.COMPLETED, ProcessState.FAILED):
+                        await pm.cancel(p_long_pid)
+                        print(f"[Showcase] ► CANCELLED LongRunningAgent (PID={p_long_pid}) at tick {ticks}")
+                        _cancelled = True
+                except Exception:
+                    _cancelled = True
+
+            # Normal priority-ordered tick
             ready = await pm.list(state=ProcessState.READY)
             if not ready:
                 alive = []
@@ -121,11 +197,15 @@ async def _showcase_demo_pipeline() -> None:
                 if not alive:
                     break
 
-            # Priority-descending: Commander(10) always runs before Telemetry(2)
             ready.sort(key=lambda p: p.priority, reverse=True)
 
             for proc in ready:
                 pid = proc.process_id
+
+                # Kernel resource enforcement
+                if await _enforce_limits(proc, pm, em):
+                    continue
+
                 try:
                     await pm.set_state(pid, ProcessState.RUNNING)
                 except Exception:
@@ -144,62 +224,53 @@ async def _showcase_demo_pipeline() -> None:
                 if result.status == StepStatus.COMPLETED:
                     await pm.set_state(pid, ProcessState.COMPLETED)
                     await pm.terminate(pid)
-
                 elif result.status == StepStatus.FAILED:
                     await pm.set_state(pid, ProcessState.FAILED)
                     await sup.handle_failure(
                         pid, FailureType.AGENT_EXCEPTION,
                         result.error or "agent returned FAILED"
                     )
-
                 elif result.status in (StepStatus.WAIT, StepStatus.YIELD):
-                    # Agent is waiting for an IPC message — cycle back to READY
                     await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.IPC)
                     await pm.set_state(pid, ProcessState.READY)
-
                 elif result.status == StepStatus.BLOCK:
-                    # Contended resource — show BLOCKED in UI, then auto-resolve
                     await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.LOCK)
                     await asyncio.sleep(0.1)
                     await pm.set_state(pid, ProcessState.READY)
-
                 else:  # CONTINUE
                     await pm.set_state(pid, ProcessState.READY)
 
                 ticks += 1
 
-            # Small delay so the UI's 600ms polling can observe mid-run states
+            # Small delay so UI can observe mid-run states (600ms polling)
             await asyncio.sleep(0.08)
 
+        procs = await pm.list()
+        print(f"[Showcase] ✓ Pipeline complete — {ticks} ticks, {len(procs)} processes tracked.")
         _ks.demo_status = "done"
-        print(
-            f"[Showcase] Pipeline complete — {ticks} ticks, "
-            f"{len(await pm.list())} processes tracked."
-        )
 
     except Exception as exc:
         _ks.demo_status = "error"
-        print(f"[Showcase] Pipeline error: {exc}")
+        print(f"[Showcase] ERROR: {exc}")
         raise
 
 
-# ── 6. Register showcase pipeline with the routes module ─────────────────────
+# ── Register showcase pipeline with routes ────────────────────────────────────
 set_demo_runner(_showcase_demo_pipeline)
 
-# ── 7. Import and start the FastAPI app ──────────────────────────────────────
-from agent_os.api.app import app  # noqa: E402  (must come after sys.path setup)
+# ── Import and start the FastAPI app ─────────────────────────────────────────
+from agent_os.api.app import app  # noqa: E402
 import uvicorn  # noqa: E402
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  Agent-OS Showcase Server")
-    print("  Autonomous Incident Response System")
-    print("=" * 60)
+    print("=" * 64)
+    print("  Agent-OS Showcase Server — 100% Feature Utilisation")
+    print("  13 agents · all restart policies · pause/resume/cancel")
+    print("=" * 64)
     print("  API docs : http://localhost:8000/docs")
     print("  Health   : http://localhost:8000/health")
-    print("  Demo     : POST http://localhost:8000/demo/run")
     print()
-    print("  Open the React UI:  http://localhost:3000")
+    print("  Open React UI: http://localhost:3000")
     print("  Then click  ▶ Run Demo  to start the showcase.")
-    print("=" * 60)
+    print("=" * 64)
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
