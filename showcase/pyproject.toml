@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-os-showcase"
+version = "0.1.0"
+description = "Autonomous Incident Response System — built on agent-os-kernel"
+requires-python = ">=3.12"
+dependencies = [
+    # Installs Agent-OS from the local wheel / TestPyPI / PyPI
+    # For local dev: pip install -e ../agent-os
+    # For PyPI:      pip install agent-os-kernel
+]
