@@ -133,9 +133,10 @@ class ContextManager:
             if not page.loaded:
                 await self._evict_if_needed()
                 await self._swap_manager.swap_in(page)
-                self.event_manager.emit(
-                    EventType.CONTEXT_SWAP_IN, 
-                    {"context_id": context_id, "page_id": page.page_id, "process_id": page.process_id}
+                await self.event_manager.emit(
+                    EventType.CONTEXT_SWAP_IN,
+                    process_id=page.process_id,
+                    metadata={"context_id": context_id, "page_id": page.page_id},
                 )
             
             page.content = content
@@ -162,9 +163,10 @@ class ContextManager:
                     
                     # Find context_id for victim
                     context_id = next(cid for cid, pages in self._contexts.items() if victim in pages)
-                    self.event_manager.emit(
-                        EventType.CONTEXT_SWAP_OUT, 
-                        {"context_id": context_id, "page_id": victim.page_id, "process_id": victim.process_id}
+                    await self.event_manager.emit(
+                        EventType.CONTEXT_SWAP_OUT,
+                        process_id=victim.process_id,
+                        metadata={"context_id": context_id, "page_id": victim.page_id},
                     )
             except MemoryPressureError:
                 break
