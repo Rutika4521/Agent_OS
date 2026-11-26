@@ -308,3 +308,99 @@ class TestRunLoop:
         await kernel.spawn(InfiniteAgent(), name="Infinite")
         # With max_steps=5 it should stop after 5 ticks, not loop forever
         await kernel.run(max_steps=5)  # no assertion needed — just must not hang
+
+
+# ── Run-loop semantics (scheduler, supervisor, quotas, sync) ──────────────────
+
+class _Recorder:
+    def __init__(self, name, log, steps=1):
+        self.name, self.log, self.left = name, log, steps
+
+    async def step(self, ctx):
+        self.log.append(self.name)
+        self.left -= 1
+        return AgentStepResult(status=StepStatus.COMPLETED if self.left <= 0 else StepStatus.CONTINUE)
+
+
+class TestRunLoopSemantics:
+    @pytest.mark.asyncio
+    async def test_highest_priority_runs_first(self, kernel):
+        log = []
+        await kernel.spawn(_Recorder("low", log), priority=1)
+        await kernel.spawn(_Recorder("high", log), priority=9)
+        await kernel.run()
+        assert log[0] == "high"
+
+    @pytest.mark.asyncio
+    async def test_supervisor_restarts_failed_agent(self, kernel):
+        class FlakyOnce:
+            def __init__(self):
+                self.calls = 0
+
+            async def step(self, ctx):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("transient")
+                return AgentStepResult(status=StepStatus.COMPLETED)
+
+        agent = FlakyOnce()
+        proc = await kernel.spawn(agent, name="Flaky", restart_policy="N_TIMES")
+        await kernel.run()
+        assert agent.calls == 2 and proc.restart_count == 1
+        assert proc.state == ProcessState.TERMINATED
+
+    @pytest.mark.asyncio
+    async def test_step_limit_enforced(self, kernel):
+        from agent_os.resources.quota import ResourceLimits
+
+        class Forever:
+            async def step(self, ctx):
+                return AgentStepResult(status=StepStatus.CONTINUE)
+
+        proc = await kernel.spawn(Forever(), resource_limits=ResourceLimits(step_limit=7))
+        await kernel.run()
+        assert proc.resource_usage.steps == 7
+        assert proc.state == ProcessState.TERMINATED
+        assert any(e["kind"] == "quota" for e in kernel.journal)
+
+    @pytest.mark.asyncio
+    async def test_deadlock_detected_and_resolved(self, kernel):
+        from agent_os.kernel.state_machine import WaitReason
+        order = {"A": ("x", "y"), "B": ("y", "x")}
+        board = {}
+
+        class Locker:
+            def __init__(self, name):
+                self.name, self.phase = name, 0
+
+            async def step(self, ctx):
+                first, second = order[self.name]
+                lk = kernel.sync
+                if self.phase == 0:
+                    await lk.acquire_lock(first, ctx.process_id)
+                    board[self.name] = True
+                    self.phase = 1
+                    return AgentStepResult(status=StepStatus.CONTINUE)
+                if self.phase == 1:
+                    if len(board) < 2:      # sleep (not yield) so the lower-priority peer can run
+                        return AgentStepResult(status=StepStatus.WAIT, output=0.01,
+                                               wait_reason=WaitReason.SLEEP)
+                    self.phase = 2
+                    if not await lk.acquire_lock(second, ctx.process_id):
+                        return AgentStepResult(status=StepStatus.BLOCK)
+                for lid in (second, first):
+                    lock = lk.get_lock(lid)
+                    if lock and lock.owner == ctx.process_id:
+                        await lk.release_lock(lid, ctx.process_id)
+                return AgentStepResult(status=StepStatus.COMPLETED)
+
+            def on_restart(self, state):
+                self.phase = 0
+
+        await kernel.spawn(Locker("A"), name="A", priority=3)
+        await kernel.spawn(Locker("B"), name="B", priority=6)
+        await kernel.run(max_seconds=10)
+        deadlocks = [e for e in kernel.journal if e["kind"] == "deadlock"]
+        assert deadlocks and deadlocks[0]["victim_name"] == "A"      # lowest priority
+        assert all(p.state == ProcessState.TERMINATED for p in await kernel.pm.list())
+        assert all(l.owner is None for l in kernel.sync._locks.values())

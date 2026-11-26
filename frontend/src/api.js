@@ -48,4 +48,5 @@ export const api = {
   runDemo:       ()            => post('/demo/run'),
   getDemoStatus: ()            => get('/demo/status'),
   resetDemo:     ()            => post('/demo/reset'),
+  getDemoReport: ()            => get('/demo/report'),
 }

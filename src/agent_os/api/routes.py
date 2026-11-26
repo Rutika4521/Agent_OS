@@ -27,20 +27,28 @@ class KernelState:
         self.event_manager     = None
         self.metrics_collector = None
         self.ipc_manager       = None
+        self.kernel            = None   # sdk.Kernel driving these subsystems (if any)
         # Demo components
         self.supervisor        = None
         self.demo_running      = False
         self.demo_status       = "idle"   # idle | running | done | error
+        self.demo_report       = None
 
 
 _ks = KernelState()
 
 
-def set_kernel_state(process_manager, event_manager, metrics_collector, ipc_manager):
+def set_kernel_state(process_manager, event_manager, metrics_collector, ipc_manager, kernel=None):
     _ks.process_manager   = process_manager
     _ks.event_manager     = event_manager
     _ks.metrics_collector = metrics_collector
     _ks.ipc_manager       = ipc_manager
+    _ks.kernel            = kernel
+
+
+def use_kernel(kernel) -> None:
+    """Point every endpoint at a booted sdk.Kernel (processes, events, IPC, operator actions)."""
+    set_kernel_state(kernel.pm, kernel.events, kernel.metrics, kernel.ipc, kernel=kernel)
 
 
 def set_demo_components(supervisor, ipc_manager, event_manager, process_manager):
@@ -148,8 +156,13 @@ async def get_process(pid: int):
 async def cancel_process(pid: int):
     pm = _get_pm()
     try:
-        await pm.cancel(pid)
-        return {"status": "cancelled", "process_id": pid}
+        if _ks.kernel is not None:
+            # Kernel path: reclaim locks/memory, CANCELLED → TERMINATED, orphan policy.
+            await _ks.kernel.cancel(pid)
+        else:
+            await pm.cancel(pid)
+            await pm.terminate(pid)
+        return {"status": "cancelled", "process_id": pid, "state": (await pm.get(pid)).state.value}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -158,7 +171,10 @@ async def cancel_process(pid: int):
 async def terminate_process(pid: int):
     pm = _get_pm()
     try:
-        await pm.terminate(pid)
+        if _ks.kernel is not None:
+            await _ks.kernel.cancel(pid)
+        else:
+            await pm.terminate(pid)
         return {"status": "terminated", "process_id": pid}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -168,8 +184,16 @@ async def terminate_process(pid: int):
 async def pause_process(pid: int):
     pm = _get_pm()
     try:
-        await pm.pause(pid)
-        return {"status": "paused", "process_id": pid}
+        if _ks.kernel is not None:
+            await _ks.kernel.pause(pid)
+        else:
+            await pm.pause(pid)
+        state = (await pm.get(pid)).state.value
+        if state not in ("WAITING", "BLOCKED"):
+            raise HTTPException(status_code=409, detail=f"Process {pid} is {state}; it cannot be paused")
+        return {"status": "paused", "process_id": pid, "state": state}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -178,8 +202,11 @@ async def pause_process(pid: int):
 async def resume_process(pid: int):
     pm = _get_pm()
     try:
-        await pm.resume(pid)
-        return {"status": "resumed", "process_id": pid}
+        if _ks.kernel is not None:
+            await _ks.kernel.resume(pid)
+        else:
+            await pm.resume(pid)
+        return {"status": "resumed", "process_id": pid, "state": (await pm.get(pid)).state.value}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -264,11 +291,14 @@ async def get_events(
 ):
     if not _ks.event_manager:
         raise HTTPException(status_code=503, detail="Event manager not configured")
-    events = await _ks.event_manager.get_history(limit=limit)
+    # Filter BEFORE applying the limit, otherwise rare events (deadlocks, locks)
+    # fall outside the window of the most recent N events and are never returned.
+    # event_type accepts a comma-separated list, e.g. DEADLOCK_DETECTED,LOCK_ACQUIRED
+    events = await _ks.event_manager.get_history(process_id=process_id)
     if event_type:
-        events = [e for e in events if e.event_type.value == event_type]
-    if process_id is not None:
-        events = [e for e in events if e.process_id == process_id]
+        wanted = {t.strip() for t in event_type.split(",") if t.strip()}
+        events = [e for e in events if e.event_type.value in wanted]
+    events = events[-limit:]
     return [
         {
             "event_id":   e.event_id,
@@ -328,110 +358,42 @@ async def health_check():
 # ---------------------------------------------------------------------------
 
 async def _run_demo_pipeline():
-    """Background task: spawn & run the full demo inside the live kernel."""
+    """Background task: run the Orbital Research Lab (showcase_full/) on the live server.
+
+    Nine missions, each on its own native agent_os.Kernel, ~110 agents and 62
+    scenarios. The routes follow the run live; the scorecard is at GET /demo/report.
+    """
     _ks.demo_status = "running"
+    _ks.demo_report = {"status": "running", "current_mission": "booting"}
     try:
         _ROOT = Path(__file__).resolve().parents[3]
-        _DEMO = _ROOT / "examples" / "demo"
-        if str(_DEMO) not in sys.path:
-            sys.path.insert(0, str(_DEMO))
+        _SHOWCASE = _ROOT / "showcase_full"
+        if str(_SHOWCASE) not in sys.path:
+            sys.path.insert(0, str(_SHOWCASE))
+        from live import run_live
 
-        from agents.orchestrator import OrchestratorAgent
-        from agents.researcher   import ResearchAgent
-        from agents.analyst      import AnalystAgent
-        from agents.writer       import WriterAgent
-        from agents.fault_agent  import FaultAgent
-        from agents.monitor      import MonitorAgent
-        from agent_os.kernel.state_machine import WaitReason
-        from agent_os.supervisor.failure   import FailureType
+        def publish(report):
+            _ks.demo_report = report
 
-        pm  = _ks.process_manager
-        ipc = _ks.ipc_manager
-        sup = _ks.supervisor
-
-        pid_map: dict[str, int] = {}
-
-        # Instantiate agents
-        _orch  = OrchestratorAgent(ipc, pid_map)
-        _res   = ResearchAgent(ipc, pid_map)
-        _ana   = AnalystAgent(ipc, pid_map)
-        _wri   = WriterAgent(ipc)
-        _flt   = FaultAgent()
-        _mon   = MonitorAgent(pm)
-
-        # Spawn
-        p_orch = await pm.spawn(_orch, name="Orchestrator", priority=10)
-        p_res  = await pm.spawn(_res,  name="Researcher",   priority=8)
-        p_ana  = await pm.spawn(_ana,  name="Analyst",      priority=7)
-        p_wri  = await pm.spawn(_wri,  name="Writer",       priority=6)
-        p_flt  = await pm.spawn(_flt,  name="FaultAgent",   priority=5, restart_policy="N_TIMES")
-        p_mon  = await pm.spawn(_mon,  name="Monitor",      priority=3)
-
-        pid_map["researcher"] = p_res.process_id
-        pid_map["analyst"]    = p_ana.process_id
-        pid_map["writer"]     = p_wri.process_id
-        pid_map["monitor"]    = p_mon.process_id
-
-        # Run loop — priority-ordered, with supervisor integration
-        max_ticks = 300
-        ticks = 0
-        while ticks < max_ticks:
-            ready = await pm.list(state=ProcessState.READY)
-            if not ready:
-                alive = []
-                for s in (ProcessState.RUNNING, ProcessState.WAITING, ProcessState.BLOCKED):
-                    alive.extend(await pm.list(state=s))
-                if not alive:
-                    break
-
-            ready.sort(key=lambda p: p.priority, reverse=True)
-            for proc in ready:
-                pid = proc.process_id
-                try:
-                    await pm.set_state(pid, ProcessState.RUNNING)
-                except Exception:
-                    continue
-
-                ctx = AgentContext(process_id=pid, data={"process": proc})
-                try:
-                    result = await proc.agent.step(ctx)
-                except Exception as exc:
-                    await pm.set_state(pid, ProcessState.FAILED)
-                    await sup.handle_failure(pid, FailureType.AGENT_EXCEPTION, str(exc))
-                    continue
-
-                proc.resource_usage.steps += 1
-
-                if result.status == StepStatus.COMPLETED:
-                    await pm.set_state(pid, ProcessState.COMPLETED)
-                    await pm.terminate(pid)
-                elif result.status == StepStatus.FAILED:
-                    await pm.set_state(pid, ProcessState.FAILED)
-                    error = result.error or "Agent reported failure"
-                    await sup.handle_failure(pid, FailureType.AGENT_EXCEPTION, error)
-                elif result.status in (StepStatus.WAIT, StepStatus.YIELD):
-                    await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.IPC)
-                    await pm.set_state(pid, ProcessState.READY)
-                else:
-                    await pm.set_state(pid, ProcessState.READY)
-
-                ticks += 1
-
-            await asyncio.sleep(0.08)   # small delay so UI polling can see mid-run states
-
-        _ks.demo_status = "done"
-        print("[Agent-OS Demo] Pipeline complete.")
-
+        report = await run_live(_ks, pace=0.02, publish=publish)
+        _ks.demo_status = "done" if report["counts"]["FAIL"] == 0 else "error"
     except Exception as e:
         _ks.demo_status = "error"
-        print(f"[Agent-OS Demo] Error: {e}")
+        _ks.demo_report = {"status": "error", "error": repr(e)}
+        print(f"[Agent-OS Demo] Error: {e!r}")
         raise
+
+
+@router.get("/demo/report", tags=["Demo"])
+async def demo_report():
+    """Scorecard of the running / last demo: per-scenario outcome and evidence."""
+    return _ks.demo_report or {"status": "idle"}
 
 
 @router.post("/demo/run", tags=["Demo"])
 async def run_demo(background_tasks: BackgroundTasks):
     """
-    Trigger the Research Intelligence Pipeline demo.
+    Trigger the Orbital Research Lab demo (showcase_full/: 9 missions, 62 scenarios).
     Runs in the background — poll /processes and /events to see live data.
     """
     if _ks.demo_status == "running":
@@ -483,4 +445,5 @@ async def reset_demo():
         await em.clear_history()
 
     _ks.demo_status = "idle"
+    _ks.demo_report = None
     return {"status": "reset", "message": "All processes cleared. Ready to run demo again."}

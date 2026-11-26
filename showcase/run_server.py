@@ -70,6 +70,7 @@ async def _enforce_limits(proc, pm, events) -> bool:
             "limit": proc.resource_limits.token_limit,
             "used":  proc.resource_usage.total_tokens,
         })
+        await pm.set_state(pid, ProcessState.RUNNING)  # READY -> FAILED is illegal
         await pm.set_state(pid, ProcessState.FAILED)
         await pm.set_state(pid, ProcessState.TERMINATED)
         return True
@@ -80,6 +81,7 @@ async def _enforce_limits(proc, pm, events) -> bool:
             "limit": proc.resource_limits.step_limit,
             "used":  proc.resource_usage.steps,
         })
+        await pm.set_state(pid, ProcessState.RUNNING)  # READY -> COMPLETED is illegal
         await pm.set_state(pid, ProcessState.COMPLETED)
         await pm.terminate(pid)
         return True
@@ -256,7 +258,10 @@ async def _showcase_demo_pipeline() -> None:
 
 
 # ── Register showcase pipeline with routes ────────────────────────────────────
-set_demo_runner(_showcase_demo_pipeline)
+# ▶ Run Demo now runs the Orbital Research Lab (showcase_full/) by default.
+# Start with --legacy to get this file's original 13-agent pipeline instead.
+if "--legacy" in sys.argv:
+    set_demo_runner(_showcase_demo_pipeline)
 
 # ── Import and start the FastAPI app ─────────────────────────────────────────
 from agent_os.api.app import app  # noqa: E402

@@ -1,0 +1,1336 @@
+{
+  "elapsed_s": 8.77,
+  "counts": {
+    "PASS": 62,
+    "FAIL": 0,
+    "KNOWN": 0,
+    "XPASS": 0
+  },
+  "scenarios": [
+    {
+      "id": "S01",
+      "mission": "M1",
+      "area": "Scheduling",
+      "title": "Preemptive priority: Flight Director (prio 10) runs first",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "very first step of the whole mission is FlightDirector",
+          "ok": true,
+          "evidence": "first=FlightDirector among 86 agents"
+        },
+        {
+          "desc": "FlightDirector completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "mission": "M1",
+      "area": "Scheduling",
+      "title": "Starvation prevention via aging",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "prio-1 janitor ran before the prio-7 crunchers finished",
+          "ok": true,
+          "evidence": "janitor tick 146 < last cruncher tick 376"
+        },
+        {
+          "desc": "scheduled while crunchers were still runnable",
+          "ok": true,
+          "evidence": "waited 1.92s with 3 crunchers alive"
+        },
+        {
+          "desc": "janitor completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "mission": "M1",
+      "area": "Scheduling",
+      "title": "YIELD keeps an agent runnable until it finishes",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "yielded 5 times and completed",
+          "ok": true,
+          "evidence": "5 steps"
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Fan-out / fan-in with correlation IDs and WAITING(IPC)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "analysts parked in WAITING(IPC) before work arrived",
+          "ok": true,
+          "evidence": "['Analyst-1', 'Analyst-2', 'Analyst-3']"
+        },
+        {
+          "desc": "all 3 jobs delivered",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "aggregator matched every correlation id",
+          "ok": true,
+          "evidence": "{'job-1': 'Analyst-1', 'job-2': 'Analyst-2', 'job-3': 'Analyst-3'}"
+        },
+        {
+          "desc": "aggregator completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Overflow policy REJECT: 8-message burst into a capacity-3 mailbox",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "3 delivered, 5 rejected",
+          "ok": true,
+          "evidence": "['DELIVERED', 'DELIVERED', 'DELIVERED', 'DROPPED', 'DROPPED', 'DROPPED', 'DROPPED', 'DROPPED']"
+        },
+        {
+          "desc": "5 IPC_DROPPED events in the audit log",
+          "ok": true,
+          "evidence": "5 events"
+        },
+        {
+          "desc": "reader got the 3 oldest (0,1,2)",
+          "ok": true,
+          "evidence": "[[0, 1, 2]]"
+        }
+      ]
+    },
+    {
+      "id": "S07",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Overflow policy DROP: oldest messages evicted, newest kept",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "every send accepted (DROP never rejects the sender)",
+          "ok": true,
+          "evidence": "['DELIVERED', 'DELIVERED', 'DELIVERED', 'DELIVERED', 'DELIVERED', 'DELIVERED', 'DELIVERED', 'DELIVERED']"
+        },
+        {
+          "desc": "reader got only the 3 newest (5,6,7)",
+          "ok": true,
+          "evidence": "[[5, 6, 7]]"
+        }
+      ]
+    },
+    {
+      "id": "S08",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Overflow policy BLOCK: a full mailbox blocks the sender; step timeout rescues it",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "2 messages fit, the 3rd send blocked inside the step",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "kernel step timeout ended it (TOOL_TIMEOUT), the loop never froze",
+          "ok": true,
+          "evidence": "Step timed out after 0.3s"
+        }
+      ]
+    },
+    {
+      "id": "S09",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Per-sender FIFO ordering with sequence numbers",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "all 10 messages arrived",
+          "ok": true,
+          "evidence": "10"
+        },
+        {
+          "desc": "each sender's messages in order, channel sequence numbers 0..4",
+          "ok": true,
+          "evidence": "{'Sequencer-A': [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)], 'Sequencer-B': [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)]}"
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Peer crashes: waiter is woken by the IPC deadline",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "kernel woke the waiter with ipc_timed_out",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "waiter degraded gracefully and completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "mission": "M1",
+      "area": "IPC",
+      "title": "Dead letters: mail to a dead or missing PID is refused",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "mail to the terminated Ghost is refused",
+          "ok": true,
+          "evidence": "status=DROPPED"
+        },
+        {
+          "desc": "mail to PID 9999 is refused",
+          "ok": true,
+          "evidence": "status=DROPPED"
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "mission": "M1",
+      "area": "Deadlock",
+      "title": "Two-agent lock deadlock (AB / BA ordering)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "cycle Ledger \u2194 Auditor detected",
+          "ok": true,
+          "evidence": "['Auditor', 'Ledger']"
+        },
+        {
+          "desc": "victim = lowest priority (Auditor)",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "victim restarted by the supervisor",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "both completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "mission": "M1",
+      "area": "Deadlock",
+      "title": "Three-way circular wait (dining philosophers)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "3-node cycle detected",
+          "ok": true,
+          "evidence": "Philosopher-0 \u2192 Philosopher-1 \u2192 Philosopher-2"
+        },
+        {
+          "desc": "victim = Philosopher-0 (prio 4)",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "all philosophers ate",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S14",
+      "mission": "M1",
+      "area": "Deadlock",
+      "title": "Semaphore deadlock (two 1-slot valves, crossed order)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "cycle through semaphores detected",
+          "ok": true,
+          "evidence": "{53: 'valve-1', 52: 'valve-2'}"
+        },
+        {
+          "desc": "victim Engineer-B (prio 4) restarted",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "both completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S15",
+      "mission": "M1",
+      "area": "Deadlock",
+      "title": "Deadlock victim with restart NEVER is terminated, locks reclaimed",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "Cadet chosen as victim",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "Cadet not restarted, terminated",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "Cadet's hatch reclaimed; Pilot completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S16",
+      "mission": "M1",
+      "area": "Sync",
+      "title": "Priority inversion \u2192 priority inheritance",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "kernel boosted LowLogger 2 \u2192 9",
+          "ok": true,
+          "evidence": "[(2, 9)]"
+        },
+        {
+          "desc": "LowLogger ran at priority 9 while holding 'disk'",
+          "ok": true,
+          "evidence": "[9, 9, 9, 9]"
+        },
+        {
+          "desc": "'disk' freed before MediumBatch could hog the CPU",
+          "ok": true,
+          "evidence": "after 0/25 medium steps"
+        },
+        {
+          "desc": "priority restored to 2",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S17",
+      "mission": "M1",
+      "area": "Sync",
+      "title": "Counting semaphore: 4 GPU jobs, 2 slots",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "never more than 2 holders",
+          "ok": true,
+          "evidence": "peak=2"
+        },
+        {
+          "desc": "extra jobs BLOCKED on the semaphore",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "all 4 completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S18",
+      "mission": "M1",
+      "area": "Sync",
+      "title": "Lock hand-off is FIFO, not by priority",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "queue formed as Crew-1, Crew-2, Crew-3 (priorities 3, 6, 8)",
+          "ok": true,
+          "evidence": "['Crew-1', 'Crew-2', 'Crew-3']"
+        },
+        {
+          "desc": "hand-off followed the queue (FIFO), not priority (which would be 3, 2, 1)",
+          "ok": true,
+          "evidence": "['Crew-1', 'Crew-2', 'Crew-3']"
+        }
+      ]
+    },
+    {
+      "id": "S19",
+      "mission": "M1",
+      "area": "Sync",
+      "title": "Lock leak: agent exits holding a lock",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "kernel detected the leaked 'cache' lock",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "lock reclaimed and handed to the waiter",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S20",
+      "mission": "M1",
+      "area": "Sync",
+      "title": "Re-entrant lock attempt is rejected",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "LockError surfaced as a process failure",
+          "ok": true,
+          "evidence": "LockError: Process 36 already owns lock config (no reentrant locks)"
+        },
+        {
+          "desc": "'config' freed after the crash",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S21",
+      "mission": "M1",
+      "area": "Sync",
+      "title": "Cancelling a BLOCKED waiter removes it from the lock queue",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "Waiter-A was cancelled while BLOCKED",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "hand-off skipped the cancelled waiter: Waiter-B got the hangar",
+          "ok": true,
+          "evidence": "['Waiter-B']"
+        },
+        {
+          "desc": "lock free at the end",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S22",
+      "mission": "M1",
+      "area": "Quotas",
+      "title": "Token budget (1000) enforced mid-call",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "killed with RESOURCE_LIMIT, never restarted",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "overshoot bounded by one call (kernel charges then checks)",
+          "ok": true,
+          "evidence": "used 1200/1000"
+        }
+      ]
+    },
+    {
+      "id": "S23",
+      "mission": "M1",
+      "area": "Quotas",
+      "title": "LLM-call limit",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "stopped at 4 LLM calls",
+          "ok": true,
+          "evidence": "llm_calls=4"
+        }
+      ]
+    },
+    {
+      "id": "S24",
+      "mission": "M1",
+      "area": "Quotas",
+      "title": "Step limit stops an infinite loop",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "stopped at exactly 15 steps",
+          "ok": true,
+          "evidence": "steps=15"
+        },
+        {
+          "desc": "quota kill recorded",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S25",
+      "mission": "M1",
+      "area": "Quotas",
+      "title": "Tool-call limit",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "pre-step check stops it at 5 calls",
+          "ok": true,
+          "evidence": "tool_calls=5"
+        }
+      ]
+    },
+    {
+      "id": "S26",
+      "mission": "M1",
+      "area": "Quotas",
+      "title": "Wall-time limit",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "stopped after ~0.6 s of execution",
+          "ok": true,
+          "evidence": "0.66s over 7 steps"
+        }
+      ]
+    },
+    {
+      "id": "S27",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "Restart policy NEVER",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "terminated after the first crash, 0 restarts",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S28",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "Restart policy ONCE",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "restarted exactly once, then terminated",
+          "ok": true,
+          "evidence": "failures=2"
+        }
+      ]
+    },
+    {
+      "id": "S29",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "N_TIMES: transient failure recovers",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "2 crashes, completed on the 3rd run",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S30",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "Crash loop capped at max_restarts (3)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "gave up after 3 restarts (4 crashes)",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S31",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "Exponential backoff is applied between restarts",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "delays double: 0.15 \u2192 0.3 \u2192 0.6",
+          "ok": true,
+          "evidence": "[0.15, 0.3, 0.6]"
+        },
+        {
+          "desc": "agent really stayed asleep for each delay",
+          "ok": true,
+          "evidence": "gaps [1.07, 0.56, 0.87]"
+        },
+        {
+          "desc": "recovered on the 4th run",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S32",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "Hung step killed by the step timeout",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "timeout fired (TOOL_TIMEOUT), not a 10 s hang",
+          "ok": true,
+          "evidence": "Step timed out after 0.4s"
+        },
+        {
+          "desc": "restarted and completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S33",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "LLM provider outage \u2192 LLM_FAILURE \u2192 retry",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "classified LLM_FAILURE",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "succeeded after restart",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S34",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "LLM provider timeout \u2192 LLM_TIMEOUT \u2192 retry",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "classified LLM_TIMEOUT",
+          "ok": true,
+          "evidence": "LLM_TIMEOUT"
+        },
+        {
+          "desc": "succeeded after restart",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S35",
+      "mission": "M1",
+      "area": "Supervisor",
+      "title": "Agent returns StepStatus.FAILED (no exception)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "returned FAILED handled like a crash",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "restarted and completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S36",
+      "mission": "M1",
+      "area": "Memory",
+      "title": "Checkpoint / restore: resume, don't redo",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "resumed from the checkpoint at batch 6",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "every batch processed exactly once",
+          "ok": true,
+          "evidence": "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
+        }
+      ]
+    },
+    {
+      "id": "S37",
+      "mission": "M1",
+      "area": "Memory",
+      "title": "LRU paging with pinned pages (8-page budget)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "old pages swapped out under pressure",
+          "ok": true,
+          "evidence": "7 swap-outs"
+        },
+        {
+          "desc": "page fault swaps page 0 back in, content intact",
+          "ok": true,
+          "evidence": "{'was_swapped_out': True, 'intact': True, 'loaded_now': True}"
+        },
+        {
+          "desc": "pinned pages never evicted",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S38",
+      "mission": "M1",
+      "area": "Memory",
+      "title": "Page updates bump versions",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "versions 2,3,4 after three updates",
+          "ok": true,
+          "evidence": "[[2, 3, 4]]"
+        },
+        {
+          "desc": "latest content readable",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S39",
+      "mission": "M1",
+      "area": "Memory",
+      "title": "Pin storm: kernel survives; every context freed at exit",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "agent completed despite pinning past the budget",
+          "ok": true,
+          "evidence": "10 pages loaded vs budget 8 (over-commit, no crash)"
+        },
+        {
+          "desc": "no memory context leaked once all agents exited",
+          "ok": true,
+          "evidence": "0 contexts left"
+        }
+      ]
+    },
+    {
+      "id": "S40",
+      "mission": "M1",
+      "area": "Security",
+      "title": "Capability-gated tools + live revocation",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "Intern denied db.write (TOOL_FAILURE), not restarted",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "DBA allowed",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "Contractor cut off right after revocation",
+          "ok": true,
+          "evidence": "3 writes before revocation"
+        }
+      ]
+    },
+    {
+      "id": "S41",
+      "mission": "M1",
+      "area": "Security",
+      "title": "Sandboxed execution, runaway subprocess, missing sys.exec",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "subprocess ran, stdout captured",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "runaway subprocess killed at 0.5 s",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "agent without sys.exec denied",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S44",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "Operator pause / resume",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "paused \u22650.4 s with zero steps while paused",
+          "ok": true,
+          "evidence": "0 steps during pause"
+        },
+        {
+          "desc": "resumed and finished all 20 steps",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S45",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "Pause while asleep: the sleep timer must not wake it",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "its 0.1 s sleep expired during the 0.4 s pause, yet it did not run",
+          "ok": true,
+          "evidence": "0 steps during pause"
+        },
+        {
+          "desc": "resumed and completed 3 observations",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S46",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "Cancel a runaway agent; its lock is reclaimed",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "crawler went through CANCELLED \u2192 TERMINATED",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "'crawl-db' reclaimed; blocked ReportWriter completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S47",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "Cancel an agent while it is WAITING for mail",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "cancelled from WAITING(IPC) and terminated",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S48",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "Process tree: child limit + orphan cascade",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "3 children spawned, the 4th refused",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "orphan policy terminated every child when Foreman died",
+          "ok": true,
+          "evidence": "['Rigger-1', 'Rigger-2', 'Rigger-3']"
+        }
+      ]
+    },
+    {
+      "id": "S49",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "Orphan cascade reaches grandchildren",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "Manager terminated because Director died",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "Intern terminated because Manager died",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "whole tree gone",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S50",
+      "mission": "M1",
+      "area": "Lifecycle",
+      "title": "orphan_policy=KEEP: child outlives its parent",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "Successor kept running after Founder exited and finished its work",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S59",
+      "mission": "M1",
+      "area": "Platform",
+      "title": "MetricsCollector matches the kernel's own accounting",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "steps / failures / restarts / deadlocks agree with the journal",
+          "ok": true,
+          "evidence": "metrics={'total_steps': 470, 'failures': 34, 'restarts': 17, 'deadlocks': 4} journal={'total_steps': 470, 'failures': 34, 'restarts': 17, 'deadlocks': 4}"
+        },
+        {
+          "desc": "LLM, tool and IPC traffic metered",
+          "ok": true,
+          "evidence": "llm=16 tool=11 ipc=29"
+        }
+      ]
+    },
+    {
+      "id": "S60",
+      "mission": "M1",
+      "area": "Platform",
+      "title": "Audit trail: every lifecycle step is an event",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "FlightDirector: CREATED \u2192 READY \u2192 STARTED \u2192 COMPLETED \u2192 TERMINATED",
+          "ok": true,
+          "evidence": "['PROCESS_CREATED', 'PROCESS_READY', 'PROCESS_STARTED', 'LLM_CALL', 'TOKEN_USAGE', 'PROCESS_READY', 'PROCESS_STARTED', 'LLM_CALL', 'TOKEN_USAGE', 'PROCESS_READY', 'PROCESS_STARTED', 'LLM_CALL', 'TOKEN_USAGE', 'PROCESS_COMPLETED', 'PROCESS_TERMINATED']"
+        },
+        {
+          "desc": "every agent in the mission ended TERMINATED",
+          "ok": true,
+          "evidence": "[]"
+        },
+        {
+          "desc": "every subsystem left its mark in the trail",
+          "ok": true,
+          "evidence": "1585 events; missing []"
+        }
+      ]
+    },
+    {
+      "id": "S61",
+      "mission": "M1",
+      "area": "Platform",
+      "title": "Persistence: processes and events round-trip through SQLite",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "every process persisted and read back",
+          "ok": true,
+          "evidence": "87 rows"
+        },
+        {
+          "desc": "FlightDirector row intact",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "deadlock events persisted",
+          "ok": true,
+          "evidence": "4 rows"
+        }
+      ]
+    },
+    {
+      "id": "S62",
+      "mission": "M1",
+      "area": "Platform",
+      "title": "State machine rejects illegal transitions",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "READY \u2192 COMPLETED / FAILED / BLOCKED / WAITING all rejected",
+          "ok": true,
+          "evidence": "['COMPLETED', 'FAILED', 'BLOCKED', 'WAITING']"
+        },
+        {
+          "desc": "TERMINATED is final (cannot be resurrected)",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "mission": "M2",
+      "area": "Scheduling",
+      "title": "Weighted fair share (weights 1:2:4)",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "kernel booted with the weighted_fair scheduler",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "CPU share in the first 70 picks \u2248 1:2:4",
+          "ok": true,
+          "evidence": "A=10 B=20 C=40"
+        },
+        {
+          "desc": "all tenants complete",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S42",
+      "mission": "M3",
+      "area": "Security",
+      "title": "Default capabilities from config",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "process spawned without caps inherits the defaults",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "explicit caps replace the defaults \u2192 denied",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S43",
+      "mission": "M3",
+      "area": "Security",
+      "title": "Sandbox disabled by config \u2192 SANDBOX_FAILURE",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "classified SANDBOX_FAILURE",
+          "ok": true,
+          "evidence": "SandboxDisabled: Sandbox execution is disabled"
+        }
+      ]
+    },
+    {
+      "id": "S51",
+      "mission": "M4",
+      "area": "Lifecycle",
+      "title": "Global process limit + spawning a non-agent",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "spawning an object without step() raises TypeError",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "5 hires fit (6 processes total), the next is refused",
+          "ok": true,
+          "evidence": "hired=5"
+        },
+        {
+          "desc": "every hire still ran to completion",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S56",
+      "mission": "M5",
+      "area": "Platform",
+      "title": "REST API on the live kernel: observe, message, spawn",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "POST /ipc/send woke the WAITING Beacon",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "agent spawned over HTTP was run to completion by the native loop",
+          "ok": true,
+          "evidence": "TERMINATED"
+        },
+        {
+          "desc": "GET /health and /processes reflect the kernel",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "GET /events filters the audit trail",
+          "ok": true,
+          "evidence": "4 completions"
+        }
+      ]
+    },
+    {
+      "id": "S57",
+      "mission": "M5",
+      "area": "Platform",
+      "title": "REST cancel reclaims the cancelled agent's locks",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "REST cancel accepted",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "Hoarder ends TERMINATED",
+          "ok": true,
+          "evidence": "TERMINATED"
+        },
+        {
+          "desc": "its lock went to the waiting Archivist",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S58",
+      "mission": "M5",
+      "area": "Platform",
+      "title": "REST pause / resume actually pause and resume",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "API paused it (state WAITING)",
+          "ok": true,
+          "evidence": "paused/WAITING"
+        },
+        {
+          "desc": "no step ran during the 0.3 s pause",
+          "ok": true,
+          "evidence": "paused at step 5, 5 at resume"
+        },
+        {
+          "desc": "REST resume let it finish all 30 ticks",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S52",
+      "mission": "M6",
+      "area": "Runtime",
+      "title": "Stall detection: nothing can ever run again",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "kernel detected the stall",
+          "ok": true,
+          "evidence": "['Lonely-A:WAITING', 'Lonely-B:WAITING']"
+        },
+        {
+          "desc": "both waiters terminated instead of hanging forever",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S53",
+      "mission": "M7",
+      "area": "Runtime",
+      "title": "run(max_seconds): wall-clock budget terminates survivors",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "kernel hit its 1 s budget",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "NightWatch terminated",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S54",
+      "mission": "M8",
+      "area": "Runtime",
+      "title": "run(max_steps): hard ceiling on steps",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "run() returned after exactly 25 steps",
+          "ok": true,
+          "evidence": "kernel steps=25"
+        },
+        {
+          "desc": "the survivor is left schedulable (READY) for the caller",
+          "ok": true,
+          "evidence": "READY"
+        }
+      ]
+    },
+    {
+      "id": "S55",
+      "mission": "M9",
+      "area": "SDK",
+      "title": "@agent_os.register + AutoWrapper on plain Python classes",
+      "outcome": "PASS",
+      "known_bug": null,
+      "checks": [
+        {
+          "desc": "Planner ran each declared step in order",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "init_args + sync method worked",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "exception \u2192 AutoWrapper FAILED \u2192 kernel restart \u2192 success",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "all three terminated",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    }
+  ]
+}

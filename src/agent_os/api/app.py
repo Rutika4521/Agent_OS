@@ -18,17 +18,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from agent_os.config.settings import Settings
-from agent_os.metrics.events import EventManager
-from agent_os.kernel.process_table import ProcessTable
-from agent_os.kernel.process_manager import ProcessManager
-from agent_os.resources.manager import ResourceManager
-from agent_os.ipc.ipc_manager import IPCManager
-from agent_os.memory.context_manager import ContextManager
-from agent_os.memory.checkpoint import CheckpointManager
-from agent_os.supervisor.supervisor import Supervisor
-from agent_os.supervisor.restart import RestartManager
-from agent_os.metrics.collector import MetricsCollector
-from agent_os.api.routes import router, set_kernel_state, set_demo_components
+from agent_os.api.routes import router, set_demo_components, use_kernel
 
 # Persistence (optional — gracefully disabled if sqlalchemy not installed)
 _db_manager = None
@@ -42,19 +32,11 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Boot the Agent-OS kernel + persistence layer when the server starts."""
-    settings           = Settings()
-    event_manager      = EventManager()
-    process_table      = ProcessTable()
-    process_manager    = ProcessManager(process_table, event_manager, settings)
-    resource_manager   = ResourceManager(settings)
-    ipc_manager        = IPCManager(settings, event_manager)
-    context_manager    = ContextManager(settings, event_manager)
-    checkpoint_manager = CheckpointManager(event_manager)
-    restart_manager    = RestartManager(settings.supervisor)
-    supervisor         = Supervisor(
-        process_manager, restart_manager, event_manager, checkpoint_manager
-    )
-    metrics_collector  = MetricsCollector()
+    from sdk.kernel import Kernel
+
+    settings = Settings()
+    kernel = Kernel(settings)          # the real Agent-OS kernel: scheduler, supervisor, sync, ...
+    await kernel.boot()
 
     # ── Phase 7: Boot persistence layer ───────────────────────────────────
     global _db_manager
@@ -69,17 +51,12 @@ async def lifespan(app: FastAPI):
     else:
         print("[Agent-OS] Persistence disabled (sqlalchemy/aiosqlite not installed)")
 
-    set_kernel_state(
-        process_manager=process_manager,
-        event_manager=event_manager,
-        metrics_collector=metrics_collector,
-        ipc_manager=ipc_manager,
-    )
+    use_kernel(kernel)                 # REST cancel/pause/resume go through the kernel
     set_demo_components(
-        supervisor=supervisor,
-        ipc_manager=ipc_manager,
-        event_manager=event_manager,
-        process_manager=process_manager,
+        supervisor=kernel.supervisor,
+        ipc_manager=kernel.ipc,
+        event_manager=kernel.events,
+        process_manager=kernel.pm,
     )
     print("[Agent-OS] Kernel booted successfully.")
     yield
@@ -87,6 +64,7 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ───────────────────────────────────────────────────────────
     if _db_manager:
         await _db_manager.close()
+    await kernel.shutdown()
     print("[Agent-OS] Kernel shutting down.")
 
 

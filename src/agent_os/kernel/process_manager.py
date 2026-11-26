@@ -294,11 +294,14 @@ class ProcessManager:
 
     async def pause(self, process_id: int) -> None:
         """
-        Pause a running process by moving it to WAITING.
+        Pause a process by moving it to WAITING(SLEEP).
 
-        Only RUNNING processes can be paused.
+        RUNNING and READY processes can be paused. Between steps a process is
+        READY, so READY is walked through RUNNING (the only legal path).
         """
         process = await self.get(process_id)
+        if process.state == ProcessState.READY:
+            await self.set_state(process_id, ProcessState.RUNNING)
         if process.state == ProcessState.RUNNING:
             await self.set_state(
                 process_id,

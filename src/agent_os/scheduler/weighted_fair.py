@@ -19,10 +19,13 @@ class WeightedFairScheduler:
     Each process has a deficit counter. On select_next():
     1. Add weight to each runnable process's deficit
     2. Select process with highest deficit
-    3. Subtract 1 from selected process's deficit
+    3. Subtract the TOTAL runnable weight from the selected process's deficit
 
-    This ensures over time, processes receive scheduling
-    proportional to their weight.
+    Step 3 keeps the deficits summing to zero (smooth weighted round-robin),
+    so each process receives picks in exact proportion to its weight — weights
+    1:2:4 get 1, 2 and 4 of every 7 picks, interleaved. (Subtracting only 1
+    made the deficits grow without bound and let the heaviest process
+    monopolise the CPU.)
     """
 
     def __init__(self, settings=None):
@@ -49,7 +52,9 @@ class WeightedFairScheduler:
             return None
 
         # Add weight to deficit for each runnable process
+        total_weight = 0.0
         for p in runnable:
+            total_weight += p.weight
             pid = p.process_id
             if pid not in self._deficits:
                 self._deficits[pid] = 0.0
@@ -69,8 +74,8 @@ class WeightedFairScheduler:
                 if best_process is None or p.process_id < best_process.process_id:
                     best_process = p
 
-        # Subtract 1 from selected process's deficit
+        # The winner pays back the whole round's weight
         if best_process is not None:
-            self._deficits[best_process.process_id] -= 1.0
+            self._deficits[best_process.process_id] -= total_weight
 
         return best_process

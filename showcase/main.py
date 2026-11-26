@@ -117,6 +117,7 @@ async def enforce_resource_limits(proc, pm: ProcessManager, events: EventManager
                 "used":   proc.resource_usage.total_tokens,
             },
         )
+        await pm.set_state(pid, ProcessState.RUNNING)  # must pass through RUNNING
         await pm.set_state(pid, ProcessState.FAILED)
         await pm.set_state(pid, ProcessState.TERMINATED)
         return True
@@ -134,6 +135,7 @@ async def enforce_resource_limits(proc, pm: ProcessManager, events: EventManager
                 "used":  proc.resource_usage.steps,
             },
         )
+        await pm.set_state(pid, ProcessState.RUNNING)  # must pass through RUNNING
         await pm.set_state(pid, ProcessState.COMPLETED)
         await pm.terminate(pid)
         return True

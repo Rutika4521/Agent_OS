@@ -6,11 +6,20 @@ import ResourceMeters from './components/ResourceMeters.jsx'
 import IPCPanel from './components/IPCPanel.jsx'
 import DeadlockGraph from './components/DeadlockGraph.jsx'
 import SchedulerTimeline from './components/SchedulerTimeline.jsx'
+import Scorecard from './components/Scorecard.jsx'
 
 const POLL_IDLE_MS    = 2000   // poll interval when demo is idle
 const POLL_RUNNING_MS = 600    // faster poll when demo is live
+const RARE_EVENTS = [
+  'DEADLOCK_DETECTED', 'LOCK_ACQUIRED', 'LOCK_RELEASED',
+  'IPC_SENT', 'IPC_RECEIVED', 'IPC_DROPPED',
+  'RESOURCE_LIMIT', 'PROCESS_FAILED', 'RESTART_STARTED', 'RESTART_COMPLETED',
+  'CONTEXT_SWAP_OUT', 'CONTEXT_SWAP_IN', 'CHECKPOINT_CREATED',
+  'SANDBOX_STARTED', 'SANDBOX_COMPLETED',
+].join(',')
 
 const NAV = [
+  { id: 'scorecard', label: '🛰  Scorecard'  },
   { id: 'processes', label: '⚙️  Processes'  },
   { id: 'scheduler', label: '📅  Scheduler'  },
   { id: 'ipc',       label: '📨  IPC'        },
@@ -34,7 +43,8 @@ const DEMO_STATUS_LABELS = {
 }
 
 export default function App() {
-  const [tab,        setTab]        = useState('processes')
+  const [tab,        setTab]        = useState('scorecard')
+  const [report,     setReport]     = useState(null)
   const [processes,  setProcesses]  = useState([])
   const [events,     setEvents]     = useState([])
   const [metrics,    setMetrics]    = useState(null)
@@ -47,16 +57,25 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [procs, evts, met, hlt] = await Promise.all([
+      const [procs, recent, rare, met, hlt, rep] = await Promise.all([
         api.getProcesses().catch(() => []),
         api.getEvents('?limit=500').catch(() => []),
+        // Low-volume but important events are fetched separately so the flood of
+        // scheduler transitions can't push them out of the 500-event window.
+        api.getEvents(`?event_type=${RARE_EVENTS}&limit=500`).catch(() => []),
         api.getMetrics().catch(() => null),
         api.getHealth().catch(() => null),
+        api.getDemoReport().catch(() => null),
       ])
       setProcesses(Array.isArray(procs) ? procs : [])
-      setEvents(Array.isArray(evts) ? evts : [])
+      const merged = new Map()
+      for (const e of [...(Array.isArray(rare) ? rare : []), ...(Array.isArray(recent) ? recent : [])]) {
+        merged.set(e.event_id, e)
+      }
+      setEvents([...merged.values()].sort((a, b) => a.timestamp - b.timestamp))
       setMetrics(met)
       setHealth(hlt)
+      setReport(rep)
       if (met?.demo_status) setDemoStatus(met.demo_status)
       setError(null)
       setLastTick(new Date().toLocaleTimeString())
@@ -203,7 +222,7 @@ export default function App() {
       <main style={s.main}>
         {error && (
           <div style={s.errorBanner}>
-            ⚠️ Cannot reach Agent-OS API — run <code>python run.py server</code> on port 8000. ({error})
+            ⚠️ Cannot reach Agent-OS API — run <code>python showcase_full/run_server.py</code> (or <code>python run.py server</code>) on port 8000. ({error})
           </div>
         )}
 
@@ -211,7 +230,7 @@ export default function App() {
         {demoStatus === 'running' && (
           <div style={s.runningBanner}>
             <span style={s.pulse}>●</span>
-            &nbsp; Demo pipeline running — agents are being scheduled, IPC messages flowing, resources consumed…
+            &nbsp; Orbital Research Lab running — mission <b>&nbsp;{report?.current_mission ?? 'booting'}&nbsp;</b> ({report?.missions_done?.length ?? 0}/{report?.missions_total ?? 9} done, {report?.counts?.PASS ?? 0} scenarios passed so far)
             &nbsp; <span style={{ color: '#86efac' }}>{processes.length} processes</span>
             &nbsp;|&nbsp;
             <span style={{ color: '#a5b4fc' }}>{events.length} events</span>
@@ -222,14 +241,14 @@ export default function App() {
 
         {demoStatus === 'done' && processes.length > 0 && (
           <div style={s.doneBanner}>
-            ✅ Pipeline complete — {processes.length} processes ran,&nbsp;
-            {totalTokens.toLocaleString()} tokens consumed,&nbsp;
-            {restartedCount} agent(s) restarted by Supervisor,&nbsp;
-            {events.length} events logged.
-            Explore all tabs to see the results.
+            ✅ Orbital Research Lab complete — {report?.counts?.PASS ?? 0}/{report?.scenarios_total ?? 62} scenarios
+            passed across {report?.missions_total ?? 9} missions,&nbsp;{processes.length} processes ran,&nbsp;
+            {restartedCount} agent(s) restarted by the Supervisor,&nbsp;{events.length} events shown.
+            See 🛰 Scorecard for the evidence; explore the other tabs for the live data.
           </div>
         )}
 
+        {tab === 'scorecard' && <Scorecard report={report} />}
         {tab === 'processes' && <ProcessTable processes={processes} onRefresh={refresh} />}
         {tab === 'scheduler' && <SchedulerTimeline events={events} processes={processes} />}
         {tab === 'ipc'       && <IPCPanel events={events} processes={processes} />}

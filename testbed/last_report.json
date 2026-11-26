@@ -1,0 +1,654 @@
+{
+  "elapsed_s": 4.85,
+  "ticks": 572,
+  "processes": 60,
+  "deadlocks": [
+    {
+      "cycle": [
+        "Auditor",
+        "Ledger"
+      ],
+      "victim": "Auditor",
+      "t": 1795427238.7768857,
+      "tick": 108
+    },
+    {
+      "cycle": [
+        "Philosopher-0",
+        "Philosopher-1",
+        "Philosopher-2"
+      ],
+      "victim": "Philosopher-0",
+      "t": 1795427238.8230531,
+      "tick": 116
+    }
+  ],
+  "findings": [
+    "WeightedFairScheduler adds weight to every runnable process each pick but only subtracts 1 from the winner, so deficits diverge and the heaviest tenant monopolises the CPU (first 70 picks A/B/C = 0/10/60).",
+    "Token quota is checked after the call is charged: TokenHog overshot its 1000-token budget by 200 tokens (one call).",
+    "ContextManager swallows MemoryPressureError: with all pages pinned it over-commits (10 loaded > budget 8)."
+  ],
+  "scenarios": [
+    {
+      "id": "S01",
+      "area": "Scheduling",
+      "title": "Preemptive priority: highest priority runs first",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "first process ever scheduled is Commander (prio 10)",
+          "ok": true,
+          "evidence": "first=Commander"
+        },
+        {
+          "desc": "Commander completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "area": "Scheduling",
+      "title": "Starvation prevention via aging",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "Janitor (prio 1) ran before the prio-7 hogs finished",
+          "ok": true,
+          "evidence": "janitor tick 154 < last hog tick 311"
+        },
+        {
+          "desc": "it was scheduled while hogs were still runnable",
+          "ok": true,
+          "evidence": "waited 1.99s, 3 hogs alive"
+        },
+        {
+          "desc": "Janitor completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "area": "Scheduling",
+      "title": "Weighted fair share (weights 1:2:4)",
+      "passed": false,
+      "checks": [
+        {
+          "desc": "CPU share in first 70 picks \u2248 1:2:4",
+          "ok": false,
+          "evidence": "A=0 B=10 C=60"
+        },
+        {
+          "desc": "all tenants eventually complete",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "area": "IPC",
+      "title": "Fan-out / fan-in with correlation IDs and WAITING(IPC)",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "workers parked in WAITING(IPC) before work arrived",
+          "ok": true,
+          "evidence": "['Worker-1', 'Worker-2', 'Worker-3']"
+        },
+        {
+          "desc": "all 3 jobs delivered",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "aggregator matched every correlation id",
+          "ok": true,
+          "evidence": "{'job-1': 'Worker-1', 'job-2': 'Worker-2', 'job-3': 'Worker-3'}"
+        },
+        {
+          "desc": "aggregator completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "area": "IPC",
+      "title": "Backpressure: bounded mailbox (cap 3, REJECT)",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "exactly 3 of 8 delivered, 5 rejected",
+          "ok": true,
+          "evidence": "['DELIVERED', 'DELIVERED', 'DELIVERED', 'DROPPED', 'DROPPED', 'DROPPED', 'DROPPED', 'DROPPED']"
+        },
+        {
+          "desc": "5 IPC_DROPPED events in audit log",
+          "ok": true,
+          "evidence": "5 events"
+        },
+        {
+          "desc": "consumer drained exactly the 3 accepted",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "area": "IPC",
+      "title": "Dead letters + wait timeout when peer dies",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "message to crashed peer is dropped, not queued forever",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "message to non-existent PID 9999 is dropped",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "waiter woken by IPC deadline and exited cleanly",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S07",
+      "area": "Deadlock",
+      "title": "Two-process deadlock (AB / BA lock ordering)",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "cycle Ledger \u2194 Auditor detected",
+          "ok": true,
+          "evidence": "['Auditor', 'Ledger']"
+        },
+        {
+          "desc": "victim = lowest priority (Auditor, 5)",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "victim restarted by supervisor",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "both eventually completed",
+          "ok": true,
+          "evidence": "['Ledger', 'Auditor']"
+        }
+      ]
+    },
+    {
+      "id": "S08",
+      "area": "Deadlock",
+      "title": "Three-way circular wait (dining philosophers)",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "3-node cycle detected",
+          "ok": true,
+          "evidence": "Philosopher-0 \u2192 Philosopher-1 \u2192 Philosopher-2"
+        },
+        {
+          "desc": "victim = Philosopher-0 (lowest prio 4)",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "all philosophers ate",
+          "ok": true,
+          "evidence": "['Philosopher-2', 'Philosopher-1', 'Philosopher-0']"
+        }
+      ]
+    },
+    {
+      "id": "S09",
+      "area": "Sync",
+      "title": "Priority inversion \u2192 priority inheritance",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "LowLogger boosted 2 \u2192 9 while blocking HighCritical",
+          "ok": true,
+          "evidence": "[('LowLogger', 2, 9)]"
+        },
+        {
+          "desc": "ran at inherited priority while holding 'disk'",
+          "ok": true,
+          "evidence": "[9, 9, 9, 9]"
+        },
+        {
+          "desc": "lock freed before MediumBatch (prio 5) could hog the CPU",
+          "ok": true,
+          "evidence": "after 1/25 medium steps"
+        },
+        {
+          "desc": "priority restored after release",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "area": "Sync",
+      "title": "Counting semaphore: 4 GPU jobs, 2 slots",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "never more than 2 concurrent holders",
+          "ok": true,
+          "evidence": "peak=2"
+        },
+        {
+          "desc": "excess jobs BLOCKED on the semaphore",
+          "ok": true,
+          "evidence": "['GPUJob-3', 'GPUJob-4']"
+        },
+        {
+          "desc": "all 4 jobs completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "area": "Sync",
+      "title": "Lock leak: agent exits holding a lock",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "kernel detected the leaked 'cache' lock",
+          "ok": true,
+          "evidence": "[('SloppyAgent', ['cache'])]"
+        },
+        {
+          "desc": "lock reclaimed and handed to the waiter",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "area": "Sync",
+      "title": "Re-entrant lock attempt is rejected",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "LockError surfaced as process failure",
+          "ok": true,
+          "evidence": "LockError: Process 25 already owns lock config (no reentrant locks)"
+        },
+        {
+          "desc": "lock 'config' freed after the crash",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "area": "Quotas",
+      "title": "Token budget (1000) enforced mid-call",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "killed by RESOURCE_LIMIT, not restarted",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "budget overshoot bounded by one call (\u2264400)",
+          "ok": true,
+          "evidence": "used 1200/1000"
+        }
+      ]
+    },
+    {
+      "id": "S14",
+      "area": "Quotas",
+      "title": "Step limit stops an infinite loop",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "stopped at exactly 15 steps",
+          "ok": true,
+          "evidence": "steps=15"
+        },
+        {
+          "desc": "terminated",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S15",
+      "area": "Quotas",
+      "title": "Tool-call limit",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "pre-step quota check stops it at 5 calls (never a 6th)",
+          "ok": true,
+          "evidence": "tool_calls=5/5"
+        }
+      ]
+    },
+    {
+      "id": "S16",
+      "area": "Quotas",
+      "title": "Wall-time limit",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "stopped after ~0.6s of execution time",
+          "ok": true,
+          "evidence": "0.77s over 3 steps"
+        }
+      ]
+    },
+    {
+      "id": "S17",
+      "area": "Supervisor",
+      "title": "Restart policy NEVER",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "terminated after first crash, 0 restarts",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S18",
+      "area": "Supervisor",
+      "title": "Restart policy ONCE",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "restarted exactly once, then terminated",
+          "ok": true,
+          "evidence": "restarts=1 failures=2"
+        }
+      ]
+    },
+    {
+      "id": "S19",
+      "area": "Supervisor",
+      "title": "N_TIMES: transient failure recovers",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "2 crashes, then completed on 3rd run",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S20",
+      "area": "Supervisor",
+      "title": "Crash loop capped at max_restarts (3)",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "supervisor gave up after 3 restarts (4 crashes)",
+          "ok": true,
+          "evidence": "restarts=3"
+        }
+      ]
+    },
+    {
+      "id": "S21",
+      "area": "Supervisor",
+      "title": "Exponential backoff between restarts",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "delays double each time (0.15 \u2192 0.3 \u2192 0.6)",
+          "ok": true,
+          "evidence": "[0.15, 0.3, 0.6]"
+        },
+        {
+          "desc": "agent really stayed asleep for each delay",
+          "ok": true,
+          "evidence": "observed gaps [0.66, 0.83, 0.87]"
+        },
+        {
+          "desc": "recovered on 4th run",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S22",
+      "area": "Supervisor",
+      "title": "Hung step killed by step timeout",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "timeout fired (not a 10s hang)",
+          "ok": true,
+          "evidence": "Step timed out after 0.4s"
+        },
+        {
+          "desc": "restarted and completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S23",
+      "area": "Supervisor",
+      "title": "LLM provider outage \u2192 LLM_FAILURE \u2192 retry",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "failure classified LLM_FAILURE",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "succeeded after restart",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S24",
+      "area": "Memory",
+      "title": "Checkpoint / restore: resume, don't redo",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "resumed from checkpoint at batch 6",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "every batch processed exactly once",
+          "ok": true,
+          "evidence": "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
+        }
+      ]
+    },
+    {
+      "id": "S25",
+      "area": "Memory",
+      "title": "LRU paging with pinned pages (8-page budget)",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "old pages swapped out under pressure",
+          "ok": true,
+          "evidence": "7 swap-outs"
+        },
+        {
+          "desc": "page fault swaps page 0 back in, content intact",
+          "ok": true,
+          "evidence": "{'was_swapped_out': True, 'intact': True, 'loaded_now': True}"
+        },
+        {
+          "desc": "pinned pages never evicted",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S26",
+      "area": "Memory",
+      "title": "Memory pressure: everything pinned",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "kernel survived pin storm and agent completed",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "contexts freed when processes exit (no leak)",
+          "ok": true,
+          "evidence": "0 contexts left"
+        }
+      ]
+    },
+    {
+      "id": "S27",
+      "area": "Security",
+      "title": "Capability-gated tools + live revocation",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "Intern denied db.write, killed without restart",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "DBA (has db.write) allowed",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "Contractor cut off right after revocation",
+          "ok": true,
+          "evidence": "3 writes before revocation"
+        }
+      ]
+    },
+    {
+      "id": "S28",
+      "area": "Security",
+      "title": "Sandboxed execution + timeout + no-exec capability",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "sandbox ran subprocess and captured stdout",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "runaway subprocess killed at 0.5s",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "agent without sys.exec blocked",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S29",
+      "area": "Lifecycle",
+      "title": "Operator pause / resume",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "paused \u22650.4s with zero steps executed while paused",
+          "ok": true,
+          "evidence": "0 steps during pause"
+        },
+        {
+          "desc": "resumed and finished all 20 steps",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S30",
+      "area": "Lifecycle",
+      "title": "Cancel a runaway process; its lock is reclaimed",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "crawler cancelled",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "blocked ReportWriter got 'crawl-db' and completed",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S31",
+      "area": "Lifecycle",
+      "title": "Process tree: child limit + orphan cascade",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "3 children spawned, 4th refused by kernel",
+          "ok": true,
+          "evidence": ""
+        },
+        {
+          "desc": "orphan policy terminated all children when Foreman died",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "S32",
+      "area": "Kernel",
+      "title": "State machine rejects illegal transitions",
+      "passed": true,
+      "checks": [
+        {
+          "desc": "READY \u2192 COMPLETED / FAILED / BLOCKED all rejected",
+          "ok": true,
+          "evidence": "['COMPLETED', 'FAILED', 'BLOCKED']"
+        },
+        {
+          "desc": "no process left behind in a live state",
+          "ok": true,
+          "evidence": ""
+        }
+      ]
+    }
+  ]
+}

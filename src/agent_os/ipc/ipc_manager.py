@@ -31,6 +31,26 @@ class IPCManager:
         self._queues: dict[int, MessageQueue] = {}
         self._dedup_filter = DeduplicationFilter()
         self._lock = asyncio.Lock()
+        # Optional async callable(pid) -> str | None. Returns a reason when the
+        # receiver cannot accept mail (missing / dead process), else None.
+        # Wired by the kernel; without it every PID is accepted (standalone use).
+        self._receiver_check = None
+
+    def set_receiver_check(self, check) -> None:
+        """Install the dead-letter guard: `async check(pid) -> reason | None`."""
+        self._receiver_check = check
+
+    async def discard_mailbox(self, pid: int) -> int:
+        """Drop every message queued for `pid` (e.g. when it terminates). Returns the count."""
+        async with self._lock:
+            queue = self._queues.pop(pid, None)
+        n = queue.count() if queue else 0
+        if n:
+            await self._event_manager.emit(
+                EventType.IPC_DROPPED, process_id=pid,
+                metadata={"receiver_pid": pid, "reason": "receiver terminated", "discarded": n},
+            )
+        return n
 
     async def _get_queue(self, receiver_pid: int) -> MessageQueue:
         """Get or create a message queue for a receiver."""
@@ -63,6 +83,19 @@ class IPCManager:
             message_type=message_type,
             correlation_id=correlation_id,
         )
+
+        # Dead-letter guard: refuse mail for processes that don't exist or are gone
+        if self._receiver_check is not None:
+            reason = await self._receiver_check(receiver_pid)
+            if reason:
+                msg.delivery_status = "DROPPED"
+                await self._event_manager.emit(
+                    EventType.IPC_DROPPED,
+                    process_id=sender_pid,
+                    metadata={"message_id": msg.message_id, "sender_pid": sender_pid,
+                              "receiver_pid": receiver_pid, "reason": reason},
+                )
+                return msg
 
         # Check for duplicate
         if await self._dedup_filter.is_duplicate(msg.message_id):
