@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable
 
 from agent_os.config.settings import Settings
 from agent_os.kernel.state_machine import ProcessState
-from sdk.kernel import Kernel
+from agent_os.sdk.kernel import Kernel
 
 from .os_api import LabOS
 

@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 
 from agent_os.kernel.state_machine import StepStatus, AgentStepResult, ProcessState
-from sdk.agent import AgentContext
+from agent_os.sdk.agent import AgentContext
 
 router = APIRouter()
 

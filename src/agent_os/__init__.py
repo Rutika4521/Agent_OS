@@ -23,27 +23,16 @@ Usage:
 """
 from __future__ import annotations
 
-import sys as _sys
-from pathlib import Path as _Path
-
-# ── Auto-discover and add the project root so `sdk` is importable as a package.
-# This file lives at:  <project_root>/src/agent_os/__init__.py
-# So parents[2] == project root  (agent_os/ → src/ → project root)
-_PROJECT_ROOT = str(_Path(__file__).resolve().parents[2])
-if _PROJECT_ROOT not in _sys.path:
-    _sys.path.insert(0, _PROJECT_ROOT)
-
-# SDK public API
-from sdk.registry import (       # noqa: E402
+from agent_os.sdk.registry import (
     register,
     get_registry,
     clear_registry,
     registered_count,
     AgentRegistration,
 )
-from sdk.wrapper import AutoWrapper        # noqa: E402
-from sdk.kernel import Kernel, KernelNotBootedError  # noqa: E402
-from sdk.agent import Agent, AgentContext  # noqa: E402
+from agent_os.sdk.wrapper import AutoWrapper
+from agent_os.sdk.kernel import Kernel, KernelNotBootedError
+from agent_os.sdk.agent import Agent, AgentContext
 
 # Core OS types — always available
 from agent_os.kernel.state_machine import (

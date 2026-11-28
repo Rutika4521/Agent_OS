@@ -7,7 +7,7 @@ from agent_os.kernel.process_manager import ProcessManager
 from agent_os.kernel.agent_process import AgentProcess
 from agent_os.metrics.events import EventManager
 from agent_os.config.settings import Settings
-from sdk.agent import AgentContext
+from agent_os.sdk.agent import AgentContext
 
 from agent_os.runtime.timeout import execute_with_timeout, StepTimeoutError
 from agent_os.runtime.cancellation import CancellationToken

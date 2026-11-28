@@ -20,10 +20,10 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-for p in (ROOT / "src", ROOT, HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+# ROOT = HERE.parent
+# for p in (ROOT / "src", ROOT, HERE):
+#     if str(p) not in sys.path:
+#         sys.path.insert(0, str(p))
 for stream in (sys.stdout, sys.stderr):
     try:
         stream.reconfigure(encoding="utf-8")

@@ -350,11 +350,18 @@ class Kernel:
         """Stop scheduling a process until resume(). Its state is kept."""
         self._require_booted()
         p = await self._process_manager.get(pid)
-        if p.state == ProcessState.READY:
-            await self._process_manager.set_state(pid, ProcessState.RUNNING)
-            await self._process_manager.pause(pid)          # RUNNING → WAITING(SLEEP)
         if p.state in LIVE:
             self._paused.add(pid)
+            if p.state == ProcessState.READY:
+                await self._process_manager.pause(pid)          # READY → RUNNING → WAITING(SLEEP)
+            elif p.state == ProcessState.RUNNING:
+                # Wait for the currently executing step to finish and settle into WAITING
+                t0 = time.monotonic()
+                step_timeout = self._step_timeouts.get(pid, self.default_step_timeout)
+                while p.state == ProcessState.RUNNING and pid in self._paused:
+                    if time.monotonic() - t0 > step_timeout + 0.5:
+                        break
+                    await asyncio.sleep(0.001)
             self._note("pause", pid=pid, name=p.name, step=p.resource_usage.steps)
 
     async def resume(self, pid: int) -> None:
@@ -429,7 +436,7 @@ class Kernel:
             await self._priority_inheritance()
             await self._check_deadlocks()
 
-            ready = await pm.list(state=ProcessState.READY)
+            ready = [p for p in await pm.list(state=ProcessState.READY) if p.process_id not in self._paused]
             if not ready:
                 live = [p for p in await pm.list() if p.state in LIVE]
                 if not live:
@@ -537,8 +544,18 @@ class Kernel:
         pm = self._process_manager
         pid, st = proc.process_id, result.status
 
+        # Guard: process may have been cancelled/terminated by an operator hook
+        # while its step was executing concurrently. Nothing to apply — bail out.
+        if proc.state in (ProcessState.TERMINATED, ProcessState.CANCELLED,
+                          ProcessState.COMPLETED, ProcessState.CANCELLING):
+            return
+
         if st in (StepStatus.CONTINUE, StepStatus.YIELD):
-            await pm.set_state(pid, ProcessState.READY)
+            if pid in self._paused:
+                if proc.state != ProcessState.WAITING:
+                    await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.SLEEP)
+            else:
+                await pm.set_state(pid, ProcessState.READY)
 
         elif st == StepStatus.WAIT:
             reason = result.wait_reason or WaitReason.IPC
@@ -547,13 +564,19 @@ class Kernel:
                 await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.SLEEP)
                 self._sleep_until[pid] = time.time() + float(seconds)
             elif reason == WaitReason.IPC and self._has_mail(pid):
-                await pm.set_state(pid, ProcessState.READY)
+                if pid not in self._paused:
+                    await pm.set_state(pid, ProcessState.READY)
+                else:
+                    await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.IPC)
             elif reason == WaitReason.IPC:
                 await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.IPC)
                 self._ipc_wait_since[pid] = time.time()
             else:
                 # Other wait reasons have no kernel wake source: treat as a yield.
-                await pm.set_state(pid, ProcessState.READY)
+                if pid in self._paused:
+                    await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.SLEEP)
+                else:
+                    await pm.set_state(pid, ProcessState.READY)
 
         elif st == StepStatus.BLOCK:
             waiting = self._waiting_on(pid)
@@ -562,7 +585,10 @@ class Kernel:
                 await pm.set_state(pid, ProcessState.BLOCKED,
                                    wait_reason=WaitReason.LOCK if kind == "lock" else WaitReason.RESOURCE)
             else:
-                await pm.set_state(pid, ProcessState.READY)   # granted already / nothing to wait on
+                if pid in self._paused:
+                    await pm.set_state(pid, ProcessState.WAITING, wait_reason=WaitReason.SLEEP)
+                else:
+                    await pm.set_state(pid, ProcessState.READY)   # granted already / nothing to wait on
 
         elif st == StepStatus.COMPLETED:
             held = self._held(pid)

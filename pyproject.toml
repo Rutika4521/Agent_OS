@@ -63,7 +63,7 @@ Repository = "https://github.com/your-org/agent-os"
 agent-os = "agent_os.cli:main"
 
 # ── Package discovery ──────────────────────────────────────────────────────────
-# Discovers agent_os from src/ and agent_os.sdk from sdk/ (mapped below)
+# agent_os.sdk is physically inside src/agent_os/sdk/ — auto-discovered.
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -71,7 +71,6 @@ include = ["agent_os*"]
 
 [tool.setuptools.package-dir]
 "" = "src"
-"agent_os.sdk" = "sdk"
 
 # ── Pytest ────────────────────────────────────────────────────────────────────
 

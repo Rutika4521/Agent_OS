@@ -1,5 +1,5 @@
 {
-  "elapsed_s": 8.77,
+  "elapsed_s": 8.93,
   "counts": {
     "PASS": 62,
     "FAIL": 0,
@@ -38,12 +38,12 @@
         {
           "desc": "prio-1 janitor ran before the prio-7 crunchers finished",
           "ok": true,
-          "evidence": "janitor tick 146 < last cruncher tick 376"
+          "evidence": "janitor tick 159 < last cruncher tick 338"
         },
         {
           "desc": "scheduled while crunchers were still runnable",
           "ok": true,
-          "evidence": "waited 1.92s with 3 crunchers alive"
+          "evidence": "waited 2.99s with 3 crunchers alive"
         },
         {
           "desc": "janitor completed",
@@ -628,7 +628,7 @@
         {
           "desc": "agent really stayed asleep for each delay",
           "ok": true,
-          "evidence": "gaps [1.07, 0.56, 0.87]"
+          "evidence": "gaps [2.19, 0.58, 0.61]"
         },
         {
           "desc": "recovered on the 4th run",
@@ -998,7 +998,7 @@
         {
           "desc": "steps / failures / restarts / deadlocks agree with the journal",
           "ok": true,
-          "evidence": "metrics={'total_steps': 470, 'failures': 34, 'restarts': 17, 'deadlocks': 4} journal={'total_steps': 470, 'failures': 34, 'restarts': 17, 'deadlocks': 4}"
+          "evidence": "metrics={'total_steps': 483, 'failures': 34, 'restarts': 17, 'deadlocks': 4} journal={'total_steps': 483, 'failures': 34, 'restarts': 17, 'deadlocks': 4}"
         },
         {
           "desc": "LLM, tool and IPC traffic metered",
@@ -1028,7 +1028,7 @@
         {
           "desc": "every subsystem left its mark in the trail",
           "ok": true,
-          "evidence": "1585 events; missing []"
+          "evidence": "1622 events; missing []"
         }
       ]
     },
@@ -1233,7 +1233,7 @@
         {
           "desc": "no step ran during the 0.3 s pause",
           "ok": true,
-          "evidence": "paused at step 5, 5 at resume"
+          "evidence": "paused at step 6, 6 at resume"
         },
         {
           "desc": "REST resume let it finish all 30 ticks",

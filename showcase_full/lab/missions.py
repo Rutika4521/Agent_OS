@@ -696,7 +696,7 @@ class _:
             await c.k.resume(c.os.pid("BatchReport"))
 
         c.when("pause", lambda: c.os.proc_now("BatchReport").resource_usage.steps >= 5
-               and c.os.proc_now("BatchReport").state == ProcessState.READY, pause)
+               and c.os.proc_now("BatchReport").state in (ProcessState.READY, ProcessState.RUNNING), pause)
         c.when("resume", lambda: time.time() - c.board.get("paused_t", 1e18) >= 0.4, resume)
 
     async def verify(c):

@@ -6,13 +6,6 @@ Initializes the kernel AND persistence layer on startup.
 """
 import asyncio
 from contextlib import asynccontextmanager
-from pathlib import Path
-import sys
-
-# Ensure sdk/ is importable (needed for routes.py which imports sdk.agent)
-_ROOT = Path(__file__).resolve().parents[3]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -32,7 +25,7 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Boot the Agent-OS kernel + persistence layer when the server starts."""
-    from sdk.kernel import Kernel
+    from agent_os.sdk.kernel import Kernel
 
     settings = Settings()
     kernel = Kernel(settings)          # the real Agent-OS kernel: scheduler, supervisor, sync, ...
